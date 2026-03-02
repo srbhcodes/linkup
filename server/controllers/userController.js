@@ -50,6 +50,10 @@ export const updateUserData = async (req, res) => {
         const profile = req.files.profile && req.files.profile[0]
         const cover = req.files.cover && req.files.cover[0]
 
+        if ((profile || cover) && !imagekit) {
+            return res.status(503).json({ success: false, message: "Image upload is not configured. Set IMAGEKIT_PUBLIC_KEY, IMAGEKIT_PRIVATE_KEY, and IMAGEKIT_URL_ENDPOINT in the environment." })
+        }
+
         if(profile){
             const buffer = fs.readFileSync(profile.path)
             const response = await imagekit.upload({

@@ -12,6 +12,10 @@ export const addPost = async (req, res) => {
 
         let image_urls = []
 
+        if (images.length && !imagekit) {
+            return res.status(503).json({ success: false, message: "Image upload is not configured. Set IMAGEKIT_PUBLIC_KEY, IMAGEKIT_PRIVATE_KEY, and IMAGEKIT_URL_ENDPOINT in the environment." });
+        }
+
         if(images.length){
             image_urls = await Promise.all(
                 images.map(async (image) => {
