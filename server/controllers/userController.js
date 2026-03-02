@@ -6,15 +6,49 @@ import User from "../models/User.js"
 import fs from 'fs'
 import { clerkClient } from "@clerk/express";
 
+const getPrimaryEmail = (clerkUser) => {
+    const primaryId = clerkUser?.primaryEmailAddressId;
+    const emails = clerkUser?.emailAddresses || [];
+    const primary = primaryId ? emails.find((e) => e.id === primaryId) : null;
+    return (primary?.emailAddress || emails[0]?.emailAddress || "").trim();
+};
+
+const buildUsername = (email) => {
+    const base = (email.split("@")[0] || "user").replace(/[^a-zA-Z0-9_]/g, "_");
+    return base || "user";
+};
+
+const ensureUserExists = async (userId) => {
+    const existing = await User.findById(userId);
+    if (existing) return existing;
+
+    const clerkUser = await clerkClient.users.getUser(userId);
+    const email = getPrimaryEmail(clerkUser);
+    if (!email) throw new Error("User email not found in Clerk");
+
+    const usernameBase = buildUsername(email);
+    let username = usernameBase;
+    const taken = await User.findOne({ username });
+    if (taken) username = `${usernameBase}${Math.floor(Math.random() * 10000)}`;
+
+    const fullNameRaw = `${clerkUser?.firstName || ""} ${clerkUser?.lastName || ""}`.trim();
+    const full_name = fullNameRaw || clerkUser?.username || username;
+
+    return await User.create({
+        _id: userId,
+        email,
+        full_name,
+        username,
+        profile_picture: clerkUser?.imageUrl || "",
+    });
+};
+
 
 // Get User Data using userId
 export const getUserData = async (req, res) => {
     try {
         const { userId } = req.auth()
-        const user = await User.findById(userId)
-        if(!user){
-            return res.json({success: false, message: "User not found"})
-        }
+        const user = await ensureUserExists(userId)
         res.json({success: true, user})
     } catch (error) {
         console.log(error);
@@ -227,11 +261,15 @@ export const sendConnectionRequest = async (req, res) => {
 export const getUserConnections = async (req, res) => {
     try {
         const {userId} = req.auth()
+        await ensureUserExists(userId)
         const user = await User.findById(userId).populate('connections followers following')
+        if(!user){
+            return res.json({success: false, message: "User not found"})
+        }
 
-        const connections = user.connections
-        const followers = user.followers
-        const following = user.following
+        const connections = user.connections || []
+        const followers = user.followers || []
+        const following = user.following || []
 
         const pendingConnections = (await Connection.find({to_user_id: userId, status: 'pending'}).populate('from_user_id')).map(connection=>connection.from_user_id)
 
